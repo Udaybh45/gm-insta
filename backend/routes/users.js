@@ -140,7 +140,7 @@ router.put('/profile/update', protect, upload.single('avatar'), async (req, res)
           fs.unlinkSync(oldPath);
         }
       }
-      updateData.avatar = `/uploads/${req.file.filename}`;
+      updateData.avatar = req.file.path;
     }
     const user = await User.findByIdAndUpdate(req.user._id, updateData, { new: true });
     res.json({ user });

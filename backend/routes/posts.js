@@ -80,8 +80,8 @@ router.post("/", protect, upload.single("media"), async (req, res) => {
     if (req.file) {
       const isVideo = req.file.mimetype.startsWith("video/");
       postData.type = isVideo ? "video" : "image";
-      if (isVideo) postData.video = `/uploads/${req.file.filename}`;
-      else postData.image = `/uploads/${req.file.filename}`;
+      if (isVideo) postData.video = req.file.path;
+      else postData.image = req.file.path;
     }
     const post = await Post.create(postData);
     await User.findByIdAndUpdate(req.user._id, { $inc: { postsCount: 1 } });
