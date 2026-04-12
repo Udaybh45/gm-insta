@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GMinsta — Notifications</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <style>
+    .activity-container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 24px 16px;
+    }
+    .activity-header {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 24px;
+      color: var(--text-color);
+    }
+    .activity-list {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .activity-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: var(--bg-surface);
+      border-radius: 12px;
+      border: 1px solid var(--border-light);
+    }
+    .activity-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      object-fit: cover;
+      cursor: pointer;
+    }
+    .avatar-wrapper {
+      position: relative;
+    }
+    .activity-badge {
+      position: absolute;
+      bottom: -4px;
+      right: -4px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      border: 2px solid var(--bg-surface);
+    }
+    .badge-like { background: var(--accent); }
+    .badge-request { background: #007AFF; }
+    
+    .activity-body {
+      flex: 1;
+      font-size: 14px;
+    }
+    .activity-username {
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .activity-username:hover { text-decoration: underline; }
+    
+    .activity-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .activity-media {
+      width: 48px;
+      height: 48px;
+      border-radius: 8px;
+      object-fit: cover;
+      background: #262626;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main-content">
+      <div class="activity-container">
+        <h1 class="activity-header">Notifications</h1>
+        <div class="activity-list" id="activity-list">
+          <div class="loader-full"><div class="loading-spinner"></div></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="../js/api.js"></script>
+  <script>
+    if (!requireAuth()) throw new Error('redirect');
+    buildSidebar('activity');
+
+    async function loadActivity() {
+      const list = document.getElementById('activity-list');
+      try {
+        const data = await api.get('/users/activity');
+        list.innerHTML = '';
+        
+        let hasItems = false;
+
+        // Render follow requests
+        if (data.requests && data.requests.length > 0) {
+          hasItems = true;
+          const reqsHtml = data.requests.map(req => {
+            const av = getAvatar(req);
+            return `
+              <div class="activity-item" id="req-${req._id}">
+                <div class="avatar-wrapper">
+                  <img class="activity-avatar" src="${av}" onclick="location='profile.html?u=${req.username}'">
+                  <div class="activity-badge badge-request">${icons.profile}</div>
+                </div>
+                <div class="activity-body">
+                  <span class="activity-username" onclick="location='profile.html?u=${req.username}'">${req.username}</span> 
+                  <span style="color:var(--text-muted)">requested to follow you.</span>
+                </div>
+                <div class="activity-actions">
+                  <button class="btn btn-primary btn-sm" onclick="handleRequest('${req._id}', 'accept')">Confirm</button>
+                  <button class="btn btn-outline btn-sm" onclick="handleRequest('${req._id}', 'reject')">Delete</button>
+                </div>
+              </div>
+            `;
+          }).join('');
+          list.insertAdjacentHTML('beforeend', '<h3 style="margin-top:16px;">Follow Requests</h3>' + reqsHtml);
+        }
+
+        // Render likes
+        if (data.likes && data.likes.length > 0) {
+          hasItems = true;
+          const likesHtml = data.likes.map(like => {
+            const u = like.user;
+            const av = getAvatar(u);
+            const isVideo = like.postImage && (like.postImage.endsWith('.mp4') || like.postImage.endsWith('.mov') || like.postImage.endsWith('.avi') || like.postImage.endsWith('.webm'));
+            
+            let trailingMedia = '';
+            if (like.postImage) {
+              if (isVideo) {
+                trailingMedia = `<div class="activity-media">
+                  <svg style="color:white;width:24px;height:24px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M10 9l5 3-5 3z"/></svg>
+                </div>`;
+              } else {
+                trailingMedia = `<img class="activity-media" src="${like.postImage}" alt="Post">`;
+              }
+            }
+            
+            return `
+              <div class="activity-item">
+                <div class="avatar-wrapper">
+                  <img class="activity-avatar" src="${av}" onclick="location='profile.html?u=${u.username}'">
+                  <div class="activity-badge badge-like">${icons.heart}</div>
+                </div>
+                <div class="activity-body">
+                  <span class="activity-username" onclick="location='profile.html?u=${u.username}'">${u.username}</span>
+                  <span style="color:var(--text-muted)">liked your post.</span>
+                  <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${timeAgo(like.createdAt)}</div>
+                </div>
+                ${trailingMedia}
+              </div>
+            `;
+          }).join('');
+          list.insertAdjacentHTML('beforeend', '<h3 style="margin-top:16px;">Recent Activity</h3>' + likesHtml);
+        }
+
+        if (!hasItems) {
+          list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px;">No new notifications</div>';
+        }
+      } catch (err) {
+        list.innerHTML = '<div style="text-align:center;color:var(--red);padding:40px;">Failed to load activity</div>';
+      }
+    }
+
+    async function handleRequest(id, action) {
+      try {
+        await api.post(`/users/requests/${id}/${action}`);
+        document.getElementById(`req-${id}`).remove();
+        toast.success(action === 'accept' ? 'Request accepted' : 'Request deleted');
+      } catch (err) {
+        toast.error(err.message);
+      }
+    }
+
+    loadActivity();
+  </script>
+</body>
+</html>

@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GMinsta — Messages</title>
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content" style="padding:0;">
+    <div class="chat-layout" style="height:100vh;">
+      <!-- Conversations Sidebar -->
+      <div class="chat-sidebar">
+        <div class="chat-sidebar-header">
+          <h2>Messages</h2>
+          <div style="margin-top:12px;">
+            <div class="search-bar" style="padding:8px 14px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="conv-search" placeholder="Search people..." oninput="debounceUserSearch(this.value)">
+            </div>
+          </div>
+        </div>
+        <div id="user-search-results" class="hidden" style="border-bottom:1px solid var(--border);"></div>
+        <div class="conversation-list" id="conversation-list">
+          <div class="loader-full"><div class="loading-spinner" style="width:24px;height:24px;"></div></div>
+        </div>
+      </div>
+      <!-- Chat Main -->
+      <div class="chat-main" id="chat-main">
+        <div class="chat-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          <p>Select a conversation</p>
+          <p style="font-size:13px;">or search for someone to message</p>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="../js/api.js"></script>
+<script>
+if (!requireAuth()) throw new Error('redirect');
+const user = api.user();
+let socket, currentChatUserId = null, onlineUsers = [];
+buildSidebar('chat');
+initSocket();
+loadConversations();
+
+// Check for URL params (direct message)
+const params = new URLSearchParams(location.search);
+const directUserId = params.get('u');
+const directUsername = params.get('n');
+if (directUserId && directUsername) {
+  setTimeout(() => openChat(directUserId, directUsername, null), 500);
+}
+
+function initSocket() {
+  socket = io({ auth: { token: api.token() } });
+  socket.on('connect', () => console.log('Socket connected'));
+  socket.on('online_users', users => { onlineUsers = users; updateOnlineStatus(); });
+  socket.on('receive_message', msg => {
+    if (msg.sender._id === currentChatUserId || msg.sender === currentChatUserId) {
+      appendMessage(msg, false);
+    }
+    loadConversations();
+  });
+  socket.on('user_typing', ({ userId }) => {
+    if (userId === currentChatUserId) document.getElementById('typing-indicator').style.display='flex';
+  });
+  socket.on('user_stop_typing', ({ userId }) => {
+    if (userId === currentChatUserId) document.getElementById('typing-indicator').style.display='none';
+  });
+}
+
+function updateOnlineStatus() {
+  document.querySelectorAll('.online-dot').forEach(dot => {
+    const userId = dot.dataset.userId;
+    dot.style.display = onlineUsers.includes(userId) ? 'block' : 'none';
+  });
+}
+
+async function loadConversations() {
+  try {
+    const convs = await api.get('/messages/conversations');
+    const list = document.getElementById('conversation-list');
+    if (!convs.length) { list.innerHTML='<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px;">No conversations yet</div>'; return; }
+    list.innerHTML = convs.map(c => {
+      const convUser = c._id;
+      const lastMsg = c.lastMessage;
+      const av = getAvatar(convUser);
+      return `<div class="conversation-item${currentChatUserId===convUser._id?' active':''}" onclick="openChat('${convUser._id}','${convUser.username}','${av}')">
+        <div class="conv-avatar-wrap">
+          <img class="conv-avatar" src="${av}" alt="${convUser.username}">
+          <span class="online-dot" data-user-id="${convUser._id}" style="${onlineUsers.includes(convUser._id)?'':'display:none'}"></span>
+        </div>
+        <div class="conv-info">
+          <div class="conv-name">${convUser.username}</div>
+          <div class="conv-last-msg">${lastMsg?.content||''}</div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {}
+}
+
+async function openChat(userId, username, avatar) {
+  currentChatUserId = userId;
+  const av = avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=2a2a3a&color=c8a96e&size=128`;
+  const isOnline = onlineUsers.includes(userId);
+  document.getElementById('chat-main').innerHTML = `
+    <div class="chat-header">
+      <img src="${av}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;cursor:pointer;" onclick="location='profile.html?u=${username}'" alt="">
+      <div>
+        <h3 onclick="location='profile.html?u=${username}'" style="cursor:pointer;">${username}</h3>
+        <div class="chat-status" style="${isOnline?'':'color:var(--text-muted);'}">${isOnline?'Online':'Offline'}</div>
+      </div>
+    </div>
+    <div class="chat-messages" id="chat-messages"></div>
+    <div class="typing-indicator" id="typing-indicator" style="display:none;">
+      <span>${username} is typing</span>
+      <div class="typing-dots"><span></span><span></span><span></span></div>
+    </div>
+    <div class="chat-input-area">
+      <textarea class="chat-input" id="chat-input" placeholder="Write a message..." rows="1"></textarea>
+      <button class="chat-send-btn" onclick="sendMessage()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>`;
+  
+  document.getElementById('chat-input').addEventListener('keydown', e => {
+    if (e.key==='Enter'&&!e.shiftKey) { e.preventDefault(); sendMessage(); }
+    socket.emit('typing', { receiverId: userId });
+    clearTimeout(window._typingTimer);
+    window._typingTimer = setTimeout(() => socket.emit('stop_typing', { receiverId: userId }), 1500);
+  });
+
+  await loadMessages(userId);
+  
+  // Mark conv as active
+  document.querySelectorAll('.conversation-item').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.conversation-item').forEach(el => {
+    if (el.onclick.toString().includes(userId)) el.classList.add('active');
+  });
+}
+
+async function loadMessages(userId) {
+  const container = document.getElementById('chat-messages');
+  if (!container) return;
+  container.innerHTML = '<div class="loader-full"><div class="loading-spinner" style="width:24px;height:24px;"></div></div>';
+  try {
+    const messages = await api.get('/messages/'+userId);
+    container.innerHTML = '';
+    if (!messages.length) { container.innerHTML='<div style="text-align:center;color:var(--text-muted);padding:24px;font-size:14px;">No messages yet. Say hi!</div>'; return; }
+    messages.forEach(msg => appendMessage(msg, false));
+    container.scrollTop = container.scrollHeight;
+  } catch(e) { container.innerHTML='<div style="text-align:center;color:var(--red);padding:24px;">Failed to load messages</div>'; }
+}
+
+function appendMessage(msg, scrollToBottom = true) {
+  const container = document.getElementById('chat-messages');
+  if (!container) return;
+  const isMine = (msg.sender._id || msg.sender) === user._id;
+  const senderAv = isMine ? getAvatar(user) : getAvatar(msg.sender);
+  const emptyMsg = container.querySelector('[style*="No messages"]');
+  if (emptyMsg) emptyMsg.remove();
+  container.insertAdjacentHTML('beforeend', `
+    <div class="message-row${isMine?' mine':''}">
+      <img src="${senderAv}" alt="" style="width:28px;height:28px;border-radius:50%;object-fit:cover;">
+      <div>
+        <div class="message-bubble ${isMine?'mine':'theirs'}">${escHtml(msg.content)}</div>
+        <div class="message-time">${timeAgo(msg.createdAt)}</div>
+      </div>
+    </div>`);
+  if (scrollToBottom) container.scrollTop = container.scrollHeight;
+}
+
+function sendMessage() {
+  const input = document.getElementById('chat-input');
+  if (!input || !currentChatUserId) return;
+  const content = input.value.trim(); if (!content) return;
+  socket.emit('send_message', { receiverId: currentChatUserId, content });
+  socket.once('message_sent', msg => { appendMessage(msg); loadConversations(); });
+  input.value = '';
+}
+
+let searchTimer;
+function debounceUserSearch(q) { clearTimeout(searchTimer); searchTimer = setTimeout(() => searchChatUsers(q), 400); }
+
+async function searchChatUsers(q) {
+  const results = document.getElementById('user-search-results');
+  if (!q.trim()) { results.classList.add('hidden'); return; }
+  try {
+    const users = await api.get('/users/search?q='+encodeURIComponent(q));
+    if (!users.length) { results.innerHTML='<div style="padding:12px 16px;color:var(--text-muted);font-size:13px;">No users found</div>'; }
+    else results.innerHTML = users.filter(u => u._id !== user._id).map(u=>`
+      <div onclick="openChat('${u._id}','${u.username}','${getAvatar(u)}'); document.getElementById('user-search-results').classList.add('hidden'); document.getElementById('conv-search').value='';" style="display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">
+        <img src="${getAvatar(u)}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;" alt="">
+        <span style="font-size:13px;font-weight:600;">${u.username}</span>
+      </div>`).join('');
+    results.classList.remove('hidden');
+  } catch(e) {}
+}
+
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>

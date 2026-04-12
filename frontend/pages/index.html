@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="refresh" content="0; url=/pages/login.html">
+  <title>GMinsta</title>
+</head>
+<body>
+  <script>
+    const token = localStorage.getItem('gminsta_token');
+    const user = localStorage.getItem('gminsta_user');
+    if (token && user) {
+      window.location.href = '/pages/feed.html';
+    } else {
+      window.location.href = '/pages/login.html';
+    }
+  </script>
+</body>
+</html>

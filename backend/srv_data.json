@@ -1,0 +1,20 @@
+[
+  {
+    "name": "ac-4w3yrlh-shard-00-02.hdrstb7.mongodb.net",
+    "port": 27017,
+    "priority": 0,
+    "weight": 0
+  },
+  {
+    "name": "ac-4w3yrlh-shard-00-00.hdrstb7.mongodb.net",
+    "port": 27017,
+    "priority": 0,
+    "weight": 0
+  },
+  {
+    "name": "ac-4w3yrlh-shard-00-01.hdrstb7.mongodb.net",
+    "port": 27017,
+    "priority": 0,
+    "weight": 0
+  }
+]

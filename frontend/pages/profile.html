@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GMinsta — Profile</title>
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+
+<body>
+  <div id="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main-content">
+      <div class="profile-page">
+        <div id="profile-header"></div>
+        <div
+          style="display:flex; justify-content:center; border-top:1px solid var(--border); margin-top:24px; margin-bottom:24px;">
+          <div id="tab-posts" onclick="switchProfileTab('posts')"
+            style="padding:16px 24px; font-size:12px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:var(--text-primary); cursor:pointer; border-top:1px solid var(--text-primary); margin-top:-1px; text-align:center;">
+            Posts</div>
+          <div id="tab-reels" onclick="switchProfileTab('reels')"
+            style="padding:16px 24px; font-size:12px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:var(--text-muted); cursor:pointer; border-top:1px solid transparent; margin-top:-1px; text-align:center;">
+            Reels</div>
+        </div>
+        <div id="posts-grid" class="profile-posts-grid"></div>
+        <div id="profile-loader" class="loader-full hidden">
+          <div class="loading-spinner" style="width:28px;height:28px;"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- List Modal (Followers/Following) -->
+  <div class="modal-overlay hidden" id="list-modal">
+    <div class="modal" style="max-width:400px;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="list-title">Users</h3><button class="modal-close"
+          onclick="closeListModal()">✕</button>
+      </div>
+      <div class="modal-body" id="list-body" style="max-height:400px;overflow-y:auto;padding-top:0;"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="edit-modal">
+    <div class="modal" style="max-width:480px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Edit Profile</h3><button class="modal-close" onclick="closeEditModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="text-align:center;margin-bottom:24px;">
+          <div style="position:relative;display:inline-block;">
+            <img id="edit-avatar-preview" src="" alt=""
+              style="width:88px;height:88px;border-radius:50%;object-fit:cover;border:3px solid var(--border-light);">
+            <button onclick="document.getElementById('avatar-input').click()"
+              style="position:absolute;bottom:0;right:0;width:28px;height:28px;border-radius:50%;background:var(--accent);border:none;color:var(--bg-primary);font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;">+</button>
+            <input type="file" id="avatar-input" accept="image/*" style="display:none;" onchange="previewAvatar(this)">
+          </div>
+        </div>
+        <div class="form-group"><label class="form-label">Full Name</label><input type="text" class="form-input"
+            id="edit-fullname" placeholder="Your name"></div>
+        <div class="form-group"><label class="form-label">Bio</label><textarea class="form-input" id="edit-bio" rows="3"
+            placeholder="Tell the world about yourself..." style="resize:vertical;"></textarea></div>
+        <div class="form-group"><label class="form-label">Website</label><input type="url" class="form-input"
+            id="edit-website" placeholder="https://yoursite.com"></div>
+        <div class="form-group" style="display:flex;align-items:center;gap:12px;margin:20px 0;">
+          <label class="form-label" style="margin:0;cursor:pointer;flex:1;">Private Account</label>
+          <input type="checkbox" id="edit-isprivate"
+            style="width:20px;height:20px;accent-color:var(--accent);cursor:pointer;">
+        </div>
+        <button class="btn btn-primary" id="edit-save-btn" onclick="saveProfile()">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="post-detail-modal">
+    <div class="modal comments-panel" id="post-detail-panel"
+      style="max-width:900px;padding:0;display:grid;grid-template-columns:1fr 1fr;">
+      <div class="panel-image" id="detail-post-image"></div>
+      <div class="panel-comments">
+        <div class="panel-comments-header">
+          <img id="detail-author-avatar" src="" alt=""
+            style="width:36px;height:36px;border-radius:50%;object-fit:cover;">
+          <div id="detail-author-name" style="font-size:14px;font-weight:600;margin-left:10px;"></div>
+          <button class="modal-close" style="margin-left:auto;" onclick="closePostDetail()">✕</button>
+        </div>
+        <div class="panel-comments-list" id="detail-comments-list"></div>
+        <div class="panel-comment-input">
+          <img id="detail-comment-avatar" src="" alt=""
+            style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;">
+          <textarea id="detail-comment-input" placeholder="Add a comment..." rows="1"></textarea>
+          <button class="btn btn-primary btn-sm" onclick="submitDetailComment()">Post</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="../js/api.js"></script>
+  <script>
+    if (!requireAuth()) throw new Error('redirect');
+    const user = api.user(); // Avoid `me` overriding if not handled cleanly elsewhere, we have `me` already declared.
+    const me = api.user();
+    const username = new URLSearchParams(location.search).get('u') || me.username;
+    let profileUser = null, detailPostId = null, allPosts = [], currentProfileTab = 'posts';
+    buildSidebar(username === me.username ? 'profile' : '');
+    document.getElementById('detail-comment-avatar').src = getAvatar(me);
+    loadProfile();
+
+    async function loadProfile() {
+      document.getElementById('profile-loader').classList.remove('hidden');
+      try {
+        const [user, posts] = await Promise.all([api.get('/users/' + username), api.get('/users/' + username + '/posts')]);
+        profileUser = user;
+        allPosts = posts;
+        renderHeader(user);
+        renderGrid();
+      } catch (e) { document.getElementById('profile-header').innerHTML = '<div style="text-align:center;padding:48px;color:var(--text-muted);">User not found</div>'; }
+      finally { document.getElementById('profile-loader').classList.add('hidden'); }
+    }
+
+    function renderHeader(u) {
+      const isMe = u._id === me._id;
+      const isFollowing = u.followers?.some(f => (f._id || f) === me._id);
+      const isRequested = u.followRequests?.some(f => (f._id || f) === me._id);
+      const av = getAvatar(u);
+      const isPrivate = u.isPrivate && !isMe && !isFollowing;
+      document.getElementById('profile-header').innerHTML = `
+    <div class="profile-header">
+      <div class="profile-avatar-wrap">
+        <div class="profile-avatar-ring"><img class="profile-avatar-img" src="${av}" alt="${u.username}"></div>
+      </div>
+      <div class="profile-info">
+        <div class="profile-info-top">
+          <h2 class="profile-username">${u.username} ${u.isPrivate ? `<span class="privacy-badge">🔒 Private</span>` : `<span class="privacy-badge">🌍 Public</span>`}</h2>
+          ${isMe ? `<button class="btn btn-ghost btn-sm" onclick="openEditModal()">Edit Profile</button><button class="btn btn-ghost btn-sm" onclick="location='chat.html'">Messages</button>`
+          : `<button class="btn ${isFollowing || isRequested ? 'btn-ghost' : 'btn-primary'} btn-sm" id="follow-btn" onclick="toggleFollow('${u._id}')">${isFollowing ? 'Following' : isRequested ? 'Requested' : 'Follow'}</button>
+             <button class="btn btn-ghost btn-sm" onclick="location='chat.html?u=${u._id}&n=${encodeURIComponent(u.username)}'">Message</button>`}
+        </div>
+        <div class="profile-stats">
+          <div class="profile-stat"><span class="profile-stat-num">${u.postsCount || 0}</span><span class="profile-stat-label">posts</span></div>
+          <div class="profile-stat" onclick="${isPrivate ? '' : "showList('Followers')"}" style="${isPrivate ? '' : 'cursor:pointer;'}"><span class="profile-stat-num">${formatCount(u.followers?.length || 0)}</span><span class="profile-stat-label">followers</span></div>
+          <div class="profile-stat" onclick="${isPrivate ? '' : "showList('Following')"}" style="${isPrivate ? '' : 'cursor:pointer;'}"><span class="profile-stat-num">${formatCount(u.following?.length || 0)}</span><span class="profile-stat-label">following</span></div>
+        </div>
+        ${u.fullName ? `<div class="profile-fullname">${u.fullName}</div>` : ''}
+        ${u.bio ? `<div class="profile-bio">${u.bio}</div>` : ''}
+        ${u.website ? `<a href="${u.website}" target="_blank" class="profile-website">${u.website}</a>` : ''}
+        ${isPrivate ? `<div style="margin-top:20px;padding:24px;text-align:center;background:var(--bg-tertiary);border-radius:var(--radius-sm);"><div style="font-size:24px;margin-bottom:8px;">🔒</div><div style="font-weight:600;">This Account is Private</div><div style="font-size:12px;color:var(--text-muted);">Follow to see their photos and videos.</div></div>` : ''}
+      </div>
+    </div>`;
+    }
+
+    function switchProfileTab(tab) {
+      currentProfileTab = tab;
+      document.getElementById('tab-posts').style.color = tab === 'posts' ? 'var(--text-primary)' : 'var(--text-muted)';
+      document.getElementById('tab-posts').style.borderTopColor = tab === 'posts' ? 'var(--text-primary)' : 'transparent';
+      document.getElementById('tab-reels').style.color = tab === 'reels' ? 'var(--text-primary)' : 'var(--text-muted)';
+      document.getElementById('tab-reels').style.borderTopColor = tab === 'reels' ? 'var(--text-primary)' : 'transparent';
+      renderGrid();
+    }
+
+    function renderGrid() {
+      const grid = document.getElementById('posts-grid');
+      const isMe = profileUser._id === me._id;
+      const isFollowing = profileUser.followers?.some(f => (f._id || f) === me._id);
+      const isPrivate = profileUser.isPrivate && !isMe && !isFollowing;
+
+      if (isPrivate) { grid.innerHTML = ''; return; }
+
+      const postsToRender = allPosts.filter(p => currentProfileTab === 'reels' ? (p.isReel || !!p.video) : (!p.isReel && !p.video));
+
+      if (!postsToRender.length) { grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--text-muted);"><div style="font-size:40px;margin-bottom:12px;">📸</div><p>No ' + currentProfileTab + ' yet</p></div>'; return; }
+      grid.innerHTML = postsToRender.map(p => {
+        const pj = encodeURIComponent(JSON.stringify(p));
+        const mediaHtml = p.image ? `<img src="${p.image}" alt="" loading="lazy">`
+          : p.video ? `<video src="${p.video}#t=0.1" preload="metadata" style="width:100%;height:100%;object-fit:cover;" muted></video>`
+            : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--bg-tertiary);font-size:24px;">&#128221;</div>`;
+
+        return `<div class="profile-post-thumb" onclick="openPostDetail('${p._id}','${pj}')">
+      ${mediaHtml}
+      <div class="profile-post-overlay">
+        <span>${icons.heart} ${formatCount(p.likesCount || 0)}</span>
+        <span>${icons.comment} ${formatCount(p.commentsCount || 0)}</span>
+      </div>
+    </div>`;
+      }).join('');
+    }
+
+    function showList(type) {
+      const list = type === 'Followers' ? profileUser.followers : profileUser.following;
+      if (!list) return;
+      document.getElementById('list-title').textContent = type;
+      const body = document.getElementById('list-body');
+      if (!list.length) { body.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text-muted);">No one here yet.</div>`; }
+      else {
+        body.innerHTML = `<div class="user-list">${list.map(u => `
+      <div class="user-list-item" style="margin-bottom:12px;">
+        <img src="${getAvatar(u)}" alt="${u.username}" onclick="location='profile.html?u=${u.username}'" style="cursor:pointer;width:40px;height:40px;border-radius:50%;object-fit:cover;">
+        <div class="user-list-info">
+          <div class="user-list-name" onclick="location='profile.html?u=${u.username}'" style="font-weight:600;cursor:pointer;">${u.username}</div>
+          <div class="user-list-sub" style="font-size:12px;color:var(--text-muted);">${u.fullName || ''}</div>
+        </div>
+        ${u._id !== me._id ? `<button class="btn btn-outline btn-xs" onclick="location='profile.html?u=${u.username}'">View</button>` : ''}
+      </div>`).join('')}</div>`;
+      }
+      document.getElementById('list-modal').classList.remove('hidden');
+    }
+    function closeListModal() { document.getElementById('list-modal').classList.add('hidden'); }
+
+    async function toggleFollow(userId) {
+      const btn = document.getElementById('follow-btn');
+      try {
+        const data = await api.post('/users/' + userId + '/follow');
+        btn.textContent = data.following ? 'Following' : 'Follow';
+        btn.className = data.following ? 'btn btn-ghost btn-sm' : 'btn btn-primary btn-sm';
+        loadProfile();
+      } catch (err) { toast.error(err.message); }
+    }
+
+    function openEditModal() {
+      document.getElementById('edit-avatar-preview').src = getAvatar(profileUser);
+      document.getElementById('edit-fullname').value = profileUser.fullName || '';
+      document.getElementById('edit-bio').value = profileUser.bio || '';
+      document.getElementById('edit-website').value = profileUser.website || '';
+      document.getElementById('edit-isprivate').checked = profileUser.isPrivate || false;
+      document.getElementById('edit-modal').classList.remove('hidden');
+    }
+    function closeEditModal() { document.getElementById('edit-modal').classList.add('hidden'); }
+    function previewAvatar(input) {
+      const r = new FileReader(); r.onload = e => { document.getElementById('edit-avatar-preview').src = e.target.result; }; r.readAsDataURL(input.files[0]);
+    }
+    async function saveProfile() {
+      const btn = document.getElementById('edit-save-btn');
+      const fd = new FormData();
+      fd.append('fullName', document.getElementById('edit-fullname').value.trim());
+      fd.append('bio', document.getElementById('edit-bio').value.trim());
+      fd.append('website', document.getElementById('edit-website').value.trim());
+      fd.append('isPrivate', document.getElementById('edit-isprivate').checked);
+      const f = document.getElementById('avatar-input').files[0]; if (f) fd.append('avatar', f);
+      btn.textContent = 'Saving...'; btn.disabled = true;
+      try {
+        const data = await api.put('/users/profile/update', fd, true);
+        localStorage.setItem('gminsta_user', JSON.stringify(data.user));
+        closeEditModal(); toast.success('Profile updated!');
+        profileUser = data.user; loadProfile(); buildSidebar('profile');
+      } catch (err) { toast.error(err.message); }
+      finally { btn.textContent = 'Save Changes'; btn.disabled = false; }
+    }
+
+    function openPostDetail(postId, postJson) {
+      const post = JSON.parse(decodeURIComponent(postJson));
+      detailPostId = postId;
+      document.getElementById('post-detail-modal').classList.remove('hidden');
+      const img = document.getElementById('detail-post-image');
+      if (post.image) { img.innerHTML = `<img src="${post.image}" style="width:100%;height:100%;object-fit:cover;" alt="">`; img.style.display = ''; document.getElementById('post-detail-panel').style.gridTemplateColumns = '1fr 1fr'; }
+      else if (post.video) { img.innerHTML = `<video src="${post.video}" style="width:100%;height:100%;object-fit:cover;" controls autoplay muted></video>`; img.style.display = ''; document.getElementById('post-detail-panel').style.gridTemplateColumns = '1fr 1fr'; }
+      else { img.style.display = 'none'; document.getElementById('post-detail-panel').style.gridTemplateColumns = '1fr'; }
+      document.getElementById('detail-author-avatar').src = getAvatar(post.author);
+      document.getElementById('detail-author-name').textContent = post.author.username;
+      loadDetailComments(postId);
+    }
+    function closePostDetail() { document.getElementById('post-detail-modal').classList.add('hidden'); detailPostId = null; }
+
+    async function loadDetailComments(postId) {
+      const list = document.getElementById('detail-comments-list');
+      list.innerHTML = '<div class="loader-full"><div class="loading-spinner" style="width:24px;height:24px;"></div></div>';
+      try {
+        const comments = await api.get('/comments/' + postId);
+        if (!comments.length) { list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;">No comments yet!</div>'; return; }
+        list.innerHTML = comments.map(c => `<div class="comment-item"><img src="${getAvatar(c.author)}" alt=""><div class="comment-bubble"><div class="comment-username" onclick="location='profile.html?u=${c.author.username}'">${c.author.username}</div><div class="comment-text">${escHtml(c.content)}</div><div class="comment-time">${timeAgo(c.createdAt)}</div></div></div>`).join('');
+      } catch (e) { list.innerHTML = '<div style="color:var(--red);padding:16px;text-align:center;">Failed to load</div>'; }
+    }
+    async function submitDetailComment() {
+      if (!detailPostId) return;
+      const input = document.getElementById('detail-comment-input');
+      const content = input.value.trim(); if (!content) return;
+      try {
+        const c = await api.post('/comments/' + detailPostId, { content }); input.value = '';
+        const list = document.getElementById('detail-comments-list');
+        list.insertAdjacentHTML('beforeend', `<div class="comment-item"><img src="${getAvatar(c.author)}" alt=""><div class="comment-bubble"><div class="comment-username">${c.author.username}</div><div class="comment-text">${escHtml(c.content)}</div><div class="comment-time">just now</div></div></div>`);
+        list.scrollTop = list.scrollHeight;
+      } catch (err) { toast.error('Failed'); }
+    }
+    function escHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    document.getElementById('edit-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeEditModal(); });
+    document.getElementById('list-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeListModal(); });
+    document.getElementById('post-detail-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closePostDetail(); });
+    document.getElementById('detail-comment-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitDetailComment(); } });
+  </script>
+</body>
+
+</html>

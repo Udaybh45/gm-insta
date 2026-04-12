@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GMinsta — Explore</title>
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div class="explore-page">
+      <div class="explore-header">
+        <h2>Explore</h2>
+        <p>Discover new content and people</p>
+      </div>
+      <div class="search-bar">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="search-input" placeholder="Search people..." oninput="debounceSearch(this.value)">
+      </div>
+      <div id="search-results" class="hidden" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:16px;overflow:hidden;"></div>
+      <div id="explore-grid" class="explore-grid"></div>
+      <div id="explore-loader" class="loader-full"><div class="loading-spinner" style="width:28px;height:28px;"></div></div>
+    </div>
+  </main>
+</div>
+<div class="modal-overlay hidden" id="post-modal">
+  <div class="modal comments-panel" id="post-modal-panel" style="max-width:900px;padding:0;display:grid;grid-template-columns:1fr 1fr;">
+    <div class="panel-image" id="modal-post-image"></div>
+    <div class="panel-comments">
+      <div class="panel-comments-header">
+        <img id="modal-author-avatar" src="" alt="" style="width:36px;height:36px;border-radius:50%;object-fit:cover;">
+        <div id="modal-author-name" style="font-size:14px;font-weight:600;margin-left:10px;cursor:pointer;"></div>
+        <button class="modal-close" style="margin-left:auto;" onclick="closePostModal()">x</button>
+      </div>
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border);">
+        <div id="modal-caption" style="font-size:14px;line-height:1.5;"></div>
+        <div id="modal-likes" style="font-size:13px;font-weight:600;color:var(--text-secondary);margin-top:8px;"></div>
+      </div>
+      <div class="panel-comments-list" id="modal-comments-list"></div>
+      <div class="panel-comment-input">
+        <img id="modal-comment-avatar" src="" alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;">
+        <textarea id="modal-comment-input" placeholder="Add a comment..." rows="1"></textarea>
+        <button class="btn btn-primary btn-sm" onclick="submitModalComment()">Post</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="../js/api.js"></script>
+<script>
+if (!requireAuth()) throw new Error('redirect');
+const user = api.user();
+let modalPostId = null;
+buildSidebar('explore');
+document.getElementById('modal-comment-avatar').src = getAvatar(user);
+loadExplore();
+
+async function loadExplore() {
+  try {
+    const data = await api.get('/posts/explore');
+    document.getElementById('explore-loader').classList.add('hidden');
+    const grid = document.getElementById('explore-grid');
+    if (!data.posts.length) { grid.innerHTML='<div style="text-align:center;padding:48px;color:var(--text-muted);">No posts yet</div>'; return; }
+    grid.innerHTML = data.posts.map(p => {
+      const pj = encodeURIComponent(JSON.stringify(p));
+      const mediaHtml = p.image ? `<img src="${p.image}" alt="" loading="lazy">` 
+        : p.video ? `<video src="${p.video}#t=0.1" preload="metadata" style="width:100%;height:100%;object-fit:cover;" muted></video>` 
+        : `<div style="height:200px;background:var(--bg-tertiary);display:flex;align-items:center;justify-content:center;font-size:32px;">&#128221;</div>`;
+      return `<div class="explore-grid-item" onclick="openPostModal('${p._id}','${pj}')">
+        ${mediaHtml}
+        <div class="explore-grid-item-overlay">
+          <span>${icons.heart} ${formatCount(p.likesCount||0)}</span>
+          <span>${icons.comment} ${formatCount(p.commentsCount||0)}</span>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(err) { document.getElementById('explore-loader').innerHTML='<p style="color:var(--red);">Failed to load</p>'; }
+}
+
+let searchTimeout;
+function debounceSearch(q) { clearTimeout(searchTimeout); searchTimeout = setTimeout(() => searchUsers(q), 400); }
+
+async function searchUsers(q) {
+  const results = document.getElementById('search-results');
+  if (!q.trim()) { results.classList.add('hidden'); return; }
+  try {
+    const users = await api.get('/users/search?q='+encodeURIComponent(q));
+    if (!users.length) { results.innerHTML='<div style="padding:16px;color:var(--text-muted);font-size:14px;">No users found</div>'; }
+    else results.innerHTML = users.map(u=>`
+      <div onclick="location='profile.html?u=${u.username}'" style="display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">
+        <img src="${getAvatar(u)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;" alt="">
+        <div><div style="font-size:14px;font-weight:600;">${u.username}</div>${u.fullName?`<div style="font-size:12px;color:var(--text-muted);">${u.fullName}</div>`:''}</div>
+      </div>`).join('');
+    results.classList.remove('hidden');
+  } catch(e) {}
+}
+
+document.addEventListener('click', e => { if (!e.target.closest('.search-bar') && !e.target.closest('#search-results')) document.getElementById('search-results').classList.add('hidden'); });
+
+function openPostModal(postId, postJson) {
+  const post = JSON.parse(decodeURIComponent(postJson));
+  modalPostId = postId;
+  document.getElementById('post-modal').classList.remove('hidden');
+  const img = document.getElementById('modal-post-image');
+  if (post.image) { img.innerHTML=`<img src="${post.image}" style="width:100%;height:100%;object-fit:cover;" alt="">`; img.style.display=''; document.getElementById('post-modal-panel').style.gridTemplateColumns='1fr 1fr'; }
+  else if (post.video) { img.innerHTML=`<video src="${post.video}" style="width:100%;height:100%;object-fit:cover;" controls autoplay muted></video>`; img.style.display=''; document.getElementById('post-modal-panel').style.gridTemplateColumns='1fr 1fr'; }
+  else { img.style.display='none'; document.getElementById('post-modal-panel').style.gridTemplateColumns='1fr'; }
+  const av = getAvatar(post.author);
+  document.getElementById('modal-author-avatar').src = av;
+  document.getElementById('modal-author-name').textContent = post.author.username;
+  document.getElementById('modal-author-name').onclick = () => location='profile.html?u='+post.author.username;
+  document.getElementById('modal-caption').textContent = post.caption || '';
+  document.getElementById('modal-likes').textContent = post.likesCount > 0 ? formatCount(post.likesCount)+' likes' : '';
+  loadModalComments(postId);
+}
+function closePostModal() { document.getElementById('post-modal').classList.add('hidden'); modalPostId=null; }
+
+async function loadModalComments(postId) {
+  const list = document.getElementById('modal-comments-list');
+  list.innerHTML='<div class="loader-full"><div class="loading-spinner" style="width:24px;height:24px;"></div></div>';
+  try {
+    const comments = await api.get('/comments/'+postId);
+    if (!comments.length) { list.innerHTML='<div style="text-align:center;color:var(--text-muted);padding:24px;">No comments yet!</div>'; return; }
+    list.innerHTML = comments.map(c=>`<div class="comment-item"><img src="${getAvatar(c.author)}" alt=""><div class="comment-bubble"><div class="comment-username" onclick="location='profile.html?u=${c.author.username}'">${c.author.username}</div><div class="comment-text">${escHtml(c.content)}</div><div class="comment-time">${timeAgo(c.createdAt)}</div></div></div>`).join('');
+  } catch(e) { list.innerHTML='<div style="color:var(--red);padding:16px;text-align:center;">Failed</div>'; }
+}
+async function submitModalComment() {
+  if (!modalPostId) return;
+  const input = document.getElementById('modal-comment-input');
+  const content = input.value.trim(); if(!content) return;
+  try {
+    const c = await api.post('/comments/'+modalPostId, {content}); input.value='';
+    const list = document.getElementById('modal-comments-list');
+    list.insertAdjacentHTML('beforeend',`<div class="comment-item"><img src="${getAvatar(c.author)}" alt=""><div class="comment-bubble"><div class="comment-username">${c.author.username}</div><div class="comment-text">${escHtml(c.content)}</div><div class="comment-time">just now</div></div></div>`);
+    list.scrollTop=list.scrollHeight;
+  } catch(err) { toast.error('Failed'); }
+}
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+document.getElementById('post-modal').addEventListener('click', e => { if(e.target===e.currentTarget) closePostModal(); });
+document.getElementById('modal-comment-input').addEventListener('keydown', e => { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();submitModalComment();} });
+</script>
+</body>
+</html>

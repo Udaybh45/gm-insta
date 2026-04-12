@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GMinsta — Create Account</title>
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-logo"><h1>GMinsta</h1><p>Share your world</p></div>
+    <h2 class="auth-title">Create an account</h2>
+    <p class="auth-subtitle">Join our community of creators</p>
+    
+    <div id="error-msg" class="error-msg hidden"></div>
+    <div id="success-msg" class="success-msg hidden"></div>
+    
+    <div class="form-group">
+      <label class="form-label">Full Name</label>
+      <input type="text" class="form-input" id="fullName" placeholder="Your name">
+    </div>
+    
+    <div class="form-group">
+      <label class="form-label">Username</label>
+      <input type="text" class="form-input" id="username" placeholder="@yourhandle">
+    </div>
+    
+    <div class="form-group">
+      <label class="form-label">Email</label>
+      <input type="email" class="form-input" id="email" placeholder="you@example.com">
+    </div>
+    
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <div class="password-input-wrapper">
+        <input type="password" class="form-input" id="password" placeholder="Min. 6 characters" oninput="checkStrength()">
+        <button class="password-toggle-btn" onclick="togglePassword('password')">
+          <span id="eye-icon-password">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </span>
+        </button>
+      </div>
+      <div class="strength-meter"><div id="strength-bar" class="strength-meter-bar"></div></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Confirm Password</label>
+      <div class="password-input-wrapper">
+        <input type="password" class="form-input" id="confirmPassword" placeholder="Repeat your password">
+        <button class="password-toggle-btn" onclick="togglePassword('confirmPassword')">
+          <span id="eye-icon-confirm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </span>
+        </button>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="register-btn" onclick="register()">Create Account</button>
+    <div class="auth-switch">Already have an account? <a href="login.html">Sign in</a></div>
+  </div>
+</div>
+
+<script src="../js/api.js"></script>
+<script>
+requireGuest();
+
+function togglePassword(id) {
+  const input = document.getElementById(id);
+  const icon = document.getElementById(`eye-icon-${id === 'password' ? 'password' : 'confirm'}`);
+  if (input.type === 'password') {
+    input.type = 'text';
+    icon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+  } else {
+    input.type = 'password';
+    icon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  }
+}
+
+function checkStrength() {
+  const pwd = document.getElementById('password').value;
+  const bar = document.getElementById('strength-bar');
+  bar.className = 'strength-meter-bar';
+  
+  if (!pwd) return;
+  if (pwd.length < 6) { bar.classList.add('strength-weak'); return; }
+  
+  let score = 0;
+  if (/[a-z]/.test(pwd) && /[A-Z]/.test(pwd)) score++;
+  if (/[0-9]/.test(pwd)) score++;
+  if (/[^a-zA-Z0-9]/.test(pwd)) score++;
+  
+  if (score < 2) bar.classList.add('strength-weak');
+  else if (score === 2) bar.classList.add('strength-medium');
+  else bar.classList.add('strength-strong');
+}
+
+async function register() {
+  const fullName = document.getElementById('fullName').value.trim();
+  const username = document.getElementById('username').value.trim().replace(/^@/, '');
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const confirmPassword = document.getElementById('confirmPassword').value;
+  
+  const errEl = document.getElementById('error-msg');
+  const sucEl = document.getElementById('success-msg');
+  const btn = document.getElementById('register-btn');
+  
+  errEl.classList.add('hidden'); 
+  sucEl.classList.add('hidden');
+  
+  // Validation
+  if (!username || !email || !password || !fullName) {
+    toast.error('Please fill in all required fields');
+    return;
+  }
+  
+  if (username.length < 3) {
+    toast.error('Username must be at least 3 characters');
+    return;
+  }
+  
+  if (!/^\S+@\S+\.\S+$/.test(email)) {
+    toast.error('Please enter a valid email address');
+    return;
+  }
+  
+  if (password.length < 6) {
+    toast.error('Password must be at least 6 characters');
+    return;
+  }
+  
+  if (password !== confirmPassword) {
+    toast.error('Passwords do not match');
+    return;
+  }
+  
+  btn.textContent = 'Creating account...';
+  btn.disabled = true;
+  
+  try {
+    const data = await api.post('/auth/register', {fullName, username, email, password});
+    localStorage.setItem('gminsta_token', data.token);
+    localStorage.setItem('gminsta_user', JSON.stringify(data.user));
+    
+    toast.success('Welcome to GMinsta!');
+    sucEl.textContent = 'Account created! Redirecting...';
+    sucEl.classList.remove('hidden');
+    
+    setTimeout(() => location.href = '/pages/feed.html', 1000);
+  } catch(err) {
+    toast.error(err.message);
+    errEl.textContent = err.message;
+    errEl.classList.remove('hidden');
+    btn.textContent = 'Create Account';
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
