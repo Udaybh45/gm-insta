@@ -136,7 +136,8 @@
              <button class="btn btn-ghost btn-sm" onclick="location='chat.html?u=${u._id}&n=${encodeURIComponent(u.username)}'">Message</button>`}
         </div>
         <div class="profile-stats">
-          <div class="profile-stat"><span class="profile-stat-num">${u.postsCount || 0}</span><span class="profile-stat-label">posts</span></div>
+          <!-- Removed Posts option per user request, keeping Followers, Following, and profile photo the same -->
+          <!-- <div class="profile-stat"><span class="profile-stat-num">${u.postsCount || 0}</span><span class="profile-stat-label">posts</span></div> -->
           <div class="profile-stat" onclick="${isPrivate ? '' : "showList('Followers')"}" style="${isPrivate ? '' : 'cursor:pointer;'}"><span class="profile-stat-num">${formatCount(u.followers?.length || 0)}</span><span class="profile-stat-label">followers</span></div>
           <div class="profile-stat" onclick="${isPrivate ? '' : "showList('Following')"}" style="${isPrivate ? '' : 'cursor:pointer;'}"><span class="profile-stat-num">${formatCount(u.following?.length || 0)}</span><span class="profile-stat-label">following</span></div>
         </div>

@@ -296,8 +296,8 @@ input, textarea { font-family: inherit; }
 
 .btn-danger:hover { background: rgba(224,86,86,0.25); }
 
-.btn-sm { padding: 8px 16px; font-size: 12px; }
-.btn-xs { padding: 5px 12px; font-size: 11px; }
+.btn-sm { padding: 8px 16px; font-size: 12px; width: auto; }
+.btn-xs { padding: 5px 12px; font-size: 11px; width: auto; }
 
 .auth-switch { text-align: center; margin-top: 24px; font-size: 14px; color: var(--text-secondary); }
 .auth-switch a { color: var(--accent); font-weight: 600; }
