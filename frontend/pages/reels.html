@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GMinsta — Reels</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <style>
+    /* Prevent sidebar scroll issues in Reels mode */
+    body { overflow: hidden; }
+    .main-content { padding: 0; height: 100vh; position: relative; }
+    
+    .reels-top-bar {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      padding: 20px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 50;
+      pointer-events: none;
+    }
+    .reels-top-bar h2 {
+      font-size: 22px;
+      font-weight: 700;
+      margin: 0;
+      color: white;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+      pointer-events: auto;
+    }
+    .reels-top-btn {
+      background: none;
+      border: none;
+      color: white;
+      cursor: pointer;
+      pointer-events: auto;
+      filter: drop-shadow(0 1px 4px rgba(0,0,0,0.6));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s;
+    }
+    .reels-top-btn:hover { transform: scale(1.1); }
+  </style>
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div class="reels-top-bar">
+      <h2>Reels</h2>
+      <div style="display:flex; gap:20px; align-items:center;">
+        <button id="auto-scroll-btn" class="reels-top-btn" onclick="toggleAutoScroll()" title="Toggle Auto-Scroll (Currently OFF)">
+          <svg fill="currentColor" viewBox="0 0 24 24" width="24" height="24">
+             <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm1 14.5l-4-4h3V7h2v5.5h3l-4 4z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="reels-container" id="reels-container"></div>
+    <div id="reels-loader" class="loader-full"><div class="loading-spinner" style="width:28px;height:28px;"></div></div>
+  </main>
+</div>
+
+<script src="../js/api.js"></script>
+<script>
+if (!requireAuth()) throw new Error('redirect');
+const user = api.user();
+let currentPage = 1, totalPages = 1;
+let autoScrollEnabled = false;
+
+buildSidebar('reels');
+loadReels();
+
+function toggleAutoScroll() {
+  autoScrollEnabled = !autoScrollEnabled;
+  const btn = document.getElementById('auto-scroll-btn');
+  btn.style.color = autoScrollEnabled ? 'var(--accent)' : 'white';
+  btn.title = `Toggle Auto-Scroll (Currently ${autoScrollEnabled ? 'ON' : 'OFF'})`;
+  toast.info('Auto-scroll ' + (autoScrollEnabled ? 'enabled' : 'disabled'));
+  document.querySelectorAll('.reel-video').forEach(vid => { vid.loop = !autoScrollEnabled; });
+}
+
+function togglePlayPause(video) {
+  if (video.paused) { video.play(); video.parentElement.querySelector('.play-indicator').classList.add('hidden'); }
+  else { video.pause(); video.parentElement.querySelector('.play-indicator').classList.remove('hidden'); }
+}
+
+function toggleMute(btn, event) {
+  event.stopPropagation();
+  const video = btn.parentElement.querySelector('video');
+  video.muted = !video.muted;
+  btn.innerHTML = video.muted ? '🔇' : '🔊';
+}
+
+function handleVideoEnded(video) {
+  if (autoScrollEnabled) {
+    const parent = video.closest('.reel-item');
+    const next = parent.nextElementSibling;
+    if (next && next.classList.contains('reel-item')) {
+      const container = document.getElementById('reels-container');
+      container.scrollTo({ top: next.offsetTop, behavior: 'smooth' });
+    }
+  } else {
+    video.play().catch(e=>{});
+  }
+}
+
+async function loadReels(page = 1) {
+  try {
+    const data = await api.get('/posts/reels?page=' + page);
+    const container = document.getElementById('reels-container');
+    if (page === 1) container.innerHTML = '';
+    
+    data.reels.forEach(reel => container.insertAdjacentHTML('beforeend', renderReel(reel)));
+    
+    currentPage = data.page;
+    totalPages = data.pages;
+    document.getElementById('reels-loader').classList.add('hidden');
+    
+    // Auto-scroll loading
+    container.onscroll = () => {
+      if (container.scrollHeight - container.scrollTop <= container.clientHeight + 100 && currentPage < totalPages) {
+        container.onscroll = null;
+        loadReels(currentPage + 1);
+      }
+    };
+
+    // Auto-play visible video
+    handleVideoPlayback();
+    container.addEventListener('scroll', handleVideoPlayback);
+
+  } catch(err) { toast.error('Failed to load reels'); }
+}
+
+function renderReel(reel) {
+  const av = getAvatar(reel.author);
+  const isLiked = reel.likes?.includes(user._id);
+  
+  return `
+    <div class="reel-item" data-id="${reel._id}" style="position:relative;">
+      <video class="reel-video" src="${reel.video}" ${autoScrollEnabled ? '' : 'loop'} playsinline muted onclick="togglePlayPause(this)" onended="handleVideoEnded(this)"></video>
+      <button onclick="toggleMute(this, event)" style="position:absolute;top:20px;right:20px;background:rgba(0,0,0,0.5);border:none;border-radius:50%;color:white;width:36px;height:36px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:90;font-size:16px;">🔇</button>
+      <div class="play-indicator hidden" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:64px;pointer-events:none;color:rgba(255,255,255,0.8);text-shadow:0 2px 4px rgba(0,0,0,0.5);z-index:80;">▶️</div>
+      <div class="reel-actions">
+        <button class="reel-action-btn like-btn${isLiked?' liked':''}" onclick="toggleReelLike('${reel._id}', this)">
+          ${icons.heart}
+          <span>${formatCount(reel.likesCount||0)}</span>
+        </button>
+        <button class="reel-action-btn" onclick="openReelComments('${reel._id}')">
+          ${icons.comment}
+          <span>${formatCount(reel.commentsCount||0)}</span>
+        </button>
+        <button class="reel-action-btn">
+          ${icons.share}
+        </button>
+        <button class="reel-action-btn">
+          ${icons.dots}
+        </button>
+      </div>
+
+      <div class="reel-overlay">
+        <div class="reel-user">
+          <img class="reel-avatar" src="${av}" alt="">
+          <span class="reel-username" onclick="location='profile.html?u=${reel.author.username}'">${reel.author.username}</span>
+          <button class="reel-follow-btn">Follow</button>
+        </div>
+        <div class="reel-caption">${reel.caption ? escHtml(reel.caption) : ''}</div>
+      </div>
+    </div>
+  `;
+}
+
+function handleVideoPlayback() {
+  const container = document.getElementById('reels-container');
+  const reels = document.querySelectorAll('.reel-item');
+  const viewportHeight = container.clientHeight;
+
+  reels.forEach(reel => {
+    const video = reel.querySelector('video');
+    const rect = reel.getBoundingClientRect();
+    
+    // If the reel is mostly visible in the viewport
+    if (rect.top >= -viewportHeight/2 && rect.top <= viewportHeight/2) {
+      if (video.paused) video.play().catch(e => {});
+    } else {
+      if (!video.paused) video.pause();
+    }
+  });
+}
+
+async function toggleReelLike(id, btn) {
+  try {
+    const data = await api.post('/posts/'+id+'/like');
+    btn.classList.toggle('liked', data.liked);
+    btn.querySelector('span').textContent = formatCount(data.likesCount);
+  } catch(err) { toast.error('Failed'); }
+}
+
+function openReelComments(id) {
+  // We can reuse the comments logic or show a modal
+  toast.info('Comments feature coming soon for Reels!');
+}
+
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>

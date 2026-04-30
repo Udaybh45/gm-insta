@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GMinsta — Feed</title>
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+
+<body>
+  <div id="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main-content">
+      <div class="feed-layout">
+        <div class="feed-col" id="feed-col">
+          <div class="create-post-bar" onclick="openCreatePost()">
+            <img id="feed-user-avatar" src="" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover;">
+            <span>What's on your mind?</span>
+            <button class="btn btn-outline btn-sm" style="flex-shrink:0;">+ Post</button>
+          </div>
+          <div id="posts-container"></div>
+          <div id="load-more-wrap" class="hidden" style="text-align:center;padding:16px;">
+            <button class="btn btn-ghost" onclick="loadMorePosts()">Load more</button>
+          </div>
+        </div>
+        <div class="feed-right-col" style="display:flex;flex-direction:column;gap:16px;">
+          <div class="sidebar-widget" id="profile-widget"></div>
+          <div class="sidebar-widget" id="suggestions-widget">
+            <div class="widget-title">Suggested for you</div>
+            <div id="suggestions-list">
+              <div class="loader-full">
+                <div class="loading-spinner" style="width:24px;height:24px;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Create Post Modal -->
+  <div class="modal-overlay hidden" id="create-post-modal">
+    <div class="modal" style="max-width:480px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Create Post</h3>
+        <button class="modal-close" onclick="closeCreatePost()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="upload-area" id="upload-area" onclick="document.getElementById('post-media-input').click()">
+          <div id="upload-placeholder">
+            <div class="upload-icon">📹</div>
+            <div class="upload-text">Click or drag to add a photo or video</div>
+            <div class="upload-hint">JPG, PNG, GIF, MP4, MOV up to 50MB</div>
+          </div>
+          <img id="upload-preview-img" class="upload-preview hidden" alt="Preview">
+          <video id="upload-preview-vid" class="upload-preview hidden" controls
+            style="width:100%;max-height:300px;border-radius:8px;"></video>
+          <input type="file" id="post-media-input" accept="image/*,video/*" style="display:none;"
+            onchange="previewMedia(this)">
+        </div>
+        <div class="form-group" style="margin-top:16px;">
+          <label class="form-label">Caption</label>
+          <textarea class="form-input" id="post-caption" rows="3" placeholder="Write a caption... Use #hashtags"
+            style="resize:vertical;"></textarea>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:12px;margin:16px 0;">
+          <label class="form-label" style="margin:0;cursor:pointer;flex:1;">Share as Reel</label>
+          <input type="checkbox" id="post-isreel"
+            style="width:20px;height:20px;accent-color:var(--accent);cursor:pointer;">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Location</label>
+          <input type="text" class="form-input" id="post-location" placeholder="Add location">
+        </div>
+        <button class="btn btn-primary" id="post-submit-btn" onclick="submitPost()">Share Post</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Comments Modal -->
+  <div class="modal-overlay hidden" id="comments-modal">
+    <div class="modal comments-panel" style="max-width:900px;padding:0;display:grid;">
+      <div class="panel-image" id="comments-post-image"></div>
+      <div class="panel-comments">
+        <div class="panel-comments-header">
+          <img id="comments-post-author-avatar" src="" alt=""
+            style="width:36px;height:36px;border-radius:50%;object-fit:cover;">
+          <div id="comments-post-author-name" style="font-size:14px;font-weight:600;margin-left:10px;"></div>
+          <button class="modal-close" style="margin-left:auto;" onclick="closeComments()">✕</button>
+        </div>
+        <div class="panel-comments-list" id="comments-list"></div>
+        <div class="panel-comment-input">
+          <img id="comment-user-avatar" src="" alt=""
+            style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;">
+          <textarea id="new-comment-input" placeholder="Add a comment..." rows="1"></textarea>
+          <button class="btn btn-primary btn-sm" onclick="submitComment()">Post</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../js/api.js"></script>
+  <script>
+    if (!requireAuth()) throw new Error('redirect');
+
+    let currentPage = 1, totalPages = 1, currentPostId = null;
+    const user = api.user();
+
+    buildSidebar('feed');
+    document.getElementById('feed-user-avatar').src = getAvatar(user);
+    document.getElementById('comment-user-avatar').src = getAvatar(user);
+    loadFeed();
+    loadProfileWidget();
+    loadSuggestions();
+
+    // Intersection Observer for auto-playing videos in viewport
+    const videoObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.play().catch(e => { });
+        } else {
+          entry.target.pause();
+        }
+      });
+    }, { threshold: 0.6 });
+
+    // Infinite Scroll / Auto Scroll logic
+    window.addEventListener('scroll', () => {
+      // If user scrolls near the bottom and there are pages left
+      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 400) {
+        if (currentPage < totalPages) {
+          const wrap = document.getElementById('load-more-wrap');
+          if (!wrap.classList.contains('hidden')) {
+            wrap.classList.add('hidden'); // avoid duplicate loads
+            loadMorePosts();
+          }
+        }
+      }
+    });
+
+    function togglePlayPause(video) {
+      if (video.paused) { video.play(); video.parentElement.querySelector('.play-indicator').classList.add('hidden'); }
+      else { video.pause(); video.parentElement.querySelector('.play-indicator').classList.remove('hidden'); }
+    }
+
+    function toggleMute(btn, event) {
+      event.stopPropagation();
+      const video = btn.parentElement.querySelector('video');
+      video.muted = !video.muted;
+      btn.innerHTML = video.muted ? '🔇' : '🔊';
+    }
+
+    // Drag & drop
+    const uploadArea = document.getElementById('upload-area');
+    uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+    uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+    uploadArea.addEventListener('drop', e => {
+      e.preventDefault(); uploadArea.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file) {
+        const input = document.getElementById('post-media-input');
+        const dt = new DataTransfer(); dt.items.add(file); input.files = dt.files;
+        previewMedia(input);
+      }
+    });
+
+    function previewMedia(input) {
+      const file = input.files[0]; if (!file) return;
+      const isVideo = file.type.startsWith('video/');
+      const reader = new FileReader();
+      reader.onload = e => {
+        const imgPrev = document.getElementById('upload-preview-img');
+        const vidPrev = document.getElementById('upload-preview-vid');
+        if (isVideo) {
+          vidPrev.src = e.target.result; vidPrev.classList.remove('hidden');
+          imgPrev.classList.add('hidden');
+        } else {
+          imgPrev.src = e.target.result; imgPrev.classList.remove('hidden');
+          vidPrev.classList.add('hidden');
+        }
+        document.getElementById('upload-placeholder').style.display = 'none';
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function loadFeed(page = 1) {
+      try {
+        const data = await api.get('/posts/feed?page=' + page);
+        const container = document.getElementById('posts-container');
+        if (page === 1) container.innerHTML = '';
+        if (!data.posts.length && page === 1) {
+          container.innerHTML = `<div style="text-align:center;padding:48px;color:var(--text-muted);">
+        <div style="font-size:40px;margin-bottom:12px;">📸</div>
+        <p style="font-size:16px;margin-bottom:4px;">Your feed is empty</p>
+        <p style="font-size:14px;">Follow people to see their posts!</p>
+        <a href="explore.html" class="btn btn-outline" style="margin-top:16px;display:inline-flex;">Explore Posts</a>
+      </div>`; return;
+        }
+        data.posts.forEach(post => container.insertAdjacentHTML('beforeend', renderPost(post)));
+        currentPage = data.page; totalPages = data.pages;
+
+        // Attach observer to newly loaded videos
+        container.querySelectorAll('.post-video').forEach(v => {
+          // Re-observe to avoid multiple attachments, unobserve first just in case
+          videoObserver.unobserve(v);
+          videoObserver.observe(v);
+        });
+
+        document.getElementById('load-more-wrap').classList.toggle('hidden', currentPage >= totalPages);
+      } catch (err) { toast.error('Failed to load feed'); }
+    }
+
+    function loadMorePosts() { if (currentPage < totalPages) loadFeed(currentPage + 1); }
+
+    function renderPost(post) {
+      const isLiked = post.likes && post.likes.includes(user._id);
+      const av = getAvatar(post.author);
+      const postJson = encodeURIComponent(JSON.stringify(post));
+      return `<div class="post-card" data-post-id="${post._id}">
+    <div class="post-header">
+      <a href="profile.html?u=${post.author.username}" class="post-avatar-link">
+        <img class="post-avatar" src="${av}" alt="" onerror="this.src='${av}'">
+      </a>
+      <div class="post-meta">
+        <div class="post-username" onclick="location='profile.html?u=${post.author.username}'">${post.author.username}</div>
+        ${post.location ? `<div class="post-location">📍 ${post.location}</div>` : `<div class="post-time">${timeAgo(post.createdAt)}</div>`}
+      </div>
+      ${post.author._id === user._id ? `<button class="post-more" onclick="deletePost('${post._id}',this)" title="Delete post">${icons.dots}</button>` : ''}
+    </div>
+    ${post.image ? `<div class="post-image-container"><img class="post-image" src="${post.image}" alt="Post" loading="lazy"></div>`
+          : post.video ? `<div class="post-image-container" style="position:relative;background:black;display:flex;align-items:center;justify-content:center;">
+        <video class="post-image post-video" src="${post.video}" loop playsinline muted style="object-fit:cover;cursor:pointer;max-height:600px;width:100%;" onclick="togglePlayPause(this)"></video>
+        <button onclick="toggleMute(this, event)" style="position:absolute;bottom:12px;right:12px;background:rgba(0,0,0,0.6);border:none;border-radius:50%;color:white;width:32px;height:32px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:10;font-size:16px;">🔇</button>
+        <div class="play-indicator hidden" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:48px;pointer-events:none;color:rgba(255,255,255,0.8);text-shadow:0 2px 4px rgba(0,0,0,0.5);">▶️</div>
+      </div>` : ''}
+    <div class="post-body">
+      <div class="post-actions">
+        <button class="action-btn like-btn${isLiked ? ' liked' : ''}" onclick="toggleLike('${post._id}',this)">
+          ${icons.heart}<span class="like-count">${formatCount(post.likesCount || 0)}</span>
+        </button>
+        <button class="action-btn" onclick="openComments('${post._id}','${postJson}')">
+          ${icons.comment}<span>${formatCount(post.commentsCount || 0)}</span>
+        </button>
+        <button class="action-btn save-btn">${icons.bookmark}</button>
+      </div>
+      ${post.likesCount > 0 ? `<div class="post-likes">${formatCount(post.likesCount)} <span>${post.likesCount === 1 ? 'like' : 'likes'}</span></div>` : ''}
+      ${post.caption ? `<div class="post-caption"><span class="username" onclick="location='profile.html?u=${post.author.username}'">${post.author.username}</span> ${escHtml(post.caption)}</div>` : ''}
+      ${post.tags?.length ? `<div class="post-tags">${post.tags.map(t => `<span class="post-tag">#${t}</span>`).join('')}</div>` : ''}
+      ${post.commentsCount > 0 ? `<div class="view-comments" onclick="openComments('${post._id}','${postJson}')">View all ${post.commentsCount} comments</div>` : ''}
+      <div class="post-time" style="font-size:11px;color:var(--text-muted);margin-top:4px;">${timeAgo(post.createdAt)}</div>
+    </div>
+    <div class="comment-input-row">
+      <img src="${getAvatar(user)}" alt="">
+      <input class="comment-input" placeholder="Add a comment..." onkeydown="if(event.key==='Enter')quickComment('${post._id}',this)">
+      <button class="comment-post-btn" onclick="quickComment('${post._id}',this.previousElementSibling)">Post</button>
+    </div>
+  </div>`;
+    }
+
+    async function toggleLike(postId, btn) {
+      try {
+        const data = await api.post('/posts/' + postId + '/like');
+        btn.classList.toggle('liked', data.liked);
+        btn.querySelector('.like-count').textContent = formatCount(data.likesCount);
+        const card = btn.closest('.post-card');
+        let div = card.querySelector('.post-likes');
+        if (data.likesCount > 0) {
+          if (!div) { div = document.createElement('div'); div.className = 'post-likes'; btn.closest('.post-actions').after(div); }
+          div.innerHTML = `${formatCount(data.likesCount)} <span>${data.likesCount === 1 ? 'like' : 'likes'}</span>`;
+        } else if (div) div.remove();
+      } catch (err) { toast.error('Failed'); }
+    }
+
+    async function deletePost(postId, btn) {
+      if (!confirm('Delete this post?')) return;
+      try { await api.delete('/posts/' + postId); btn.closest('.post-card').remove(); toast.success('Post deleted'); }
+      catch (err) { toast.error(err.message); }
+    }
+
+    async function quickComment(postId, input) {
+      const content = input.value.trim(); if (!content) return;
+      try {
+        await api.post('/comments/' + postId, { content }); input.value = '';
+        const vc = input.closest('.post-card').querySelector('.view-comments');
+        if (vc) { const n = parseInt(vc.textContent.match(/\d+/) || 0) + 1; vc.textContent = 'View all ' + n + ' comments'; }
+        toast.success('Comment added!');
+      } catch (err) { toast.error('Failed'); }
+    }
+
+    function openCreatePost() { document.getElementById('create-post-modal').classList.remove('hidden'); }
+    function closeCreatePost() {
+      document.getElementById('create-post-modal').classList.add('hidden');
+      document.getElementById('post-caption').value = '';
+      document.getElementById('post-location').value = '';
+      document.getElementById('post-media-input').value = '';
+      const imgPrev = document.getElementById('upload-preview-img');
+      const vidPrev = document.getElementById('upload-preview-vid');
+      imgPrev.classList.add('hidden'); imgPrev.src = '';
+      vidPrev.classList.add('hidden'); vidPrev.src = '';
+      document.getElementById('upload-placeholder').style.display = '';
+      document.getElementById('post-isreel').checked = false;
+    }
+
+    async function submitPost() {
+      const caption = document.getElementById('post-caption').value.trim();
+      const location = document.getElementById('post-location').value.trim();
+      const mediaFile = document.getElementById('post-media-input').files[0];
+      const isReel = document.getElementById('post-isreel').checked;
+      const btn = document.getElementById('post-submit-btn');
+      if (!mediaFile) { toast.error('Please select a photo or video before posting'); return; }
+      const fd = new FormData();
+      if (caption) fd.append('caption', caption);
+      if (location) fd.append('location', location);
+      if (mediaFile) fd.append('media', mediaFile);
+      fd.append('isReel', isReel);
+      const tags = [...caption.matchAll(/#(\w+)/g)].map(m => m[1]);
+      if (tags.length) fd.append('tags', tags.join(','));
+      btn.textContent = 'Sharing...'; btn.disabled = true;
+      try {
+        const post = await api.post('/posts', fd, true);
+        closeCreatePost();
+        if (isReel) { toast.success('Reel shared!'); location.href = 'reels.html'; }
+        else { toast.success('Post shared!'); document.getElementById('posts-container').insertAdjacentHTML('afterbegin', renderPost(post)); }
+      } catch (err) { toast.error(err.message); }
+      finally { btn.textContent = 'Share Post'; btn.disabled = false; }
+    }
+
+    function openComments(postId, postJson) {
+      currentPostId = postId;
+      const post = JSON.parse(decodeURIComponent(postJson));
+      document.getElementById('comments-modal').classList.remove('hidden');
+      const imgContainer = document.getElementById('comments-post-image');
+      if (post.image) {
+        imgContainer.innerHTML = `<img src="${post.image}" style="width:100%;height:100%;object-fit:cover;" alt="">`;
+        imgContainer.style.display = '';
+        document.querySelector('.comments-panel').style.gridTemplateColumns = '1fr 1fr';
+      } else {
+        imgContainer.style.display = 'none';
+        document.querySelector('.comments-panel').style.gridTemplateColumns = '1fr';
+      }
+      document.getElementById('comments-post-author-avatar').src = getAvatar(post.author);
+      document.getElementById('comments-post-author-name').textContent = post.author.username;
+      loadComments(postId);
+    }
+
+    function closeComments() { document.getElementById('comments-modal').classList.add('hidden'); currentPostId = null; }
+
+    async function loadComments(postId) {
+      const list = document.getElementById('comments-list');
+      list.innerHTML = '<div class="loader-full"><div class="loading-spinner" style="width:24px;height:24px;"></div></div>';
+      try {
+        const comments = await api.get('/comments/' + postId);
+        if (!comments.length) { list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;">No comments yet!</div>'; return; }
+        list.innerHTML = comments.map(c => `
+      <div class="comment-item" id="comment-${c._id}">
+        <img src="${getAvatar(c.author)}" alt="" onclick="location='profile.html?u=${c.author.username}'" style="cursor:pointer;">
+        <div class="comment-bubble">
+          <div class="comment-username" onclick="location='profile.html?u=${c.author.username}'">${c.author.username}</div>
+          <div class="comment-text">${escHtml(c.content)}</div>
+          <div class="comment-time">${timeAgo(c.createdAt)}${c.author._id === user._id ? ` · <span style="cursor:pointer;color:var(--red);" onclick="deleteComment('${c._id}')">Delete</span>` : ''}</div>
+        </div>
+      </div>`).join('');
+      } catch (err) { list.innerHTML = '<div style="text-align:center;color:var(--red);padding:24px;">Failed to load</div>'; }
+    }
+
+    async function submitComment() {
+      if (!currentPostId) return;
+      const input = document.getElementById('new-comment-input');
+      const content = input.value.trim(); if (!content) return;
+      try {
+        const c = await api.post('/comments/' + currentPostId, { content }); input.value = '';
+        const list = document.getElementById('comments-list');
+        const empty = list.querySelector('[style*="No comments"]'); if (empty) empty.remove();
+        list.insertAdjacentHTML('beforeend', `
+      <div class="comment-item" id="comment-${c._id}">
+        <img src="${getAvatar(c.author)}" alt="">
+        <div class="comment-bubble">
+          <div class="comment-username">${c.author.username}</div>
+          <div class="comment-text">${escHtml(c.content)}</div>
+          <div class="comment-time">just now · <span style="cursor:pointer;color:var(--red);" onclick="deleteComment('${c._id}')">Delete</span></div>
+        </div>
+      </div>`);
+        list.scrollTop = list.scrollHeight;
+      } catch (err) { toast.error('Failed to post comment'); }
+    }
+
+    async function deleteComment(commentId) {
+      if (!confirm('Delete this comment?')) return;
+      try { await api.delete('/comments/' + commentId); document.getElementById('comment-' + commentId)?.remove(); }
+      catch (err) { toast.error('Failed'); }
+    }
+
+    async function loadProfileWidget() {
+      const widget = document.getElementById('profile-widget');
+      try {
+        const u = await api.get('/users/' + user.username);
+        widget.innerHTML = `<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <img src="${getAvatar(u)}" style="width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid var(--border-light);" alt="">
+      <div><div style="font-size:14px;font-weight:700;">${u.username}</div><div style="font-size:12px;color:var(--text-muted);">${u.fullName || ''}</div></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;text-align:center;">
+      <div style="cursor:pointer;" onclick="location='profile.html?u=${u.username}'">
+        <div style="font-size:16px;font-weight:700;">${u.postsCount || 0}</div>
+        <div style="font-size:11px;color:var(--text-muted);">Posts</div>
+      </div>
+      <div><div style="font-size:16px;font-weight:700;">${u.followers?.length || 0}</div><div style="font-size:11px;color:var(--text-muted);">Followers</div></div>
+      <div><div style="font-size:16px;font-weight:700;">${u.following?.length || 0}</div><div style="font-size:11px;color:var(--text-muted);">Following</div></div>
+    </div>`;
+      } catch (e) { }
+    }
+
+    async function loadSuggestions() {
+      const list = document.getElementById('suggestions-list');
+      try {
+        const suggestions = await api.get('/users/suggestions');
+        if (!suggestions.length) { list.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">No suggestions right now</div>'; return; }
+        list.innerHTML = suggestions.map(s => `
+      <div class="suggestion-item" id="sug-${s._id}">
+        <img class="suggestion-avatar" src="${getAvatar(s)}" alt="" onclick="location='profile.html?u=${s.username}'" style="cursor:pointer;">
+        <div class="suggestion-info">
+          <div class="suggestion-username" onclick="location='profile.html?u=${s.username}'" style="cursor:pointer;">${s.username}</div>
+          <div class="suggestion-followers">${formatCount(s.followers?.length || 0)} followers</div>
+        </div>
+        <button class="btn btn-outline btn-xs suggestion-btn" onclick="followUser('${s._id}',this)">Follow</button>
+      </div>`).join('');
+      } catch (e) { list.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Could not load</div>'; }
+    }
+
+    async function followUser(userId, btn) {
+      try {
+        const data = await api.post('/users/' + userId + '/follow');
+        btn.textContent = data.following ? 'Following' : 'Follow';
+        btn.className = data.following ? 'btn btn-ghost btn-xs suggestion-btn' : 'btn btn-outline btn-xs suggestion-btn';
+      } catch (err) { toast.error(err.message); }
+    }
+
+    function escHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    document.getElementById('create-post-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeCreatePost(); });
+    document.getElementById('comments-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeComments(); });
+    document.getElementById('new-comment-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComment(); } });
+  </script>
+</body>
+
+</html>

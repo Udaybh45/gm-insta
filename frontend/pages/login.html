@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GMinsta — Login</title>
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-logo"><h1>GMinsta</h1><p>Share your world</p></div>
+    <div id="error-msg" class="error-msg hidden"></div>
+    
+    <div class="form-group">
+      <label class="form-label">Email</label>
+      <input type="email" class="form-input" id="email" placeholder="you@example.com" autocomplete="email">
+    </div>
+    
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <div class="password-input-wrapper">
+        <input type="password" class="form-input" id="password" placeholder="••••••••" autocomplete="current-password">
+        <button class="password-toggle-btn" onclick="togglePassword()">
+          <span id="eye-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </span>
+        </button>
+      </div>
+    </div>
+    
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+      <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); cursor: pointer;">
+        <input type="checkbox" style="accent-color: var(--accent);"> Remember me
+      </label>
+      <a href="#" style="font-size: 13px; color: var(--accent); font-weight: 600;">Forgot password?</a>
+    </div>
+
+    <button class="btn btn-primary" id="login-btn" onclick="login()">Sign In</button>
+    <div class="auth-switch">Don't have an account? <a href="register.html">Sign up</a></div>
+  </div>
+</div>
+
+<script src="../js/api.js"></script>
+<script>
+requireGuest();
+
+function togglePassword() {
+  const input = document.getElementById('password');
+  const icon = document.getElementById('eye-icon');
+  if (input.type === 'password') {
+    input.type = 'text';
+    icon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+  } else {
+    input.type = 'password';
+    icon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  }
+}
+
+document.querySelectorAll('.form-input').forEach(el => el.addEventListener('keydown', e => { if(e.key==='Enter') login(); }));
+
+async function login() {
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const errEl = document.getElementById('error-msg');
+  const btn = document.getElementById('login-btn');
+  
+  errEl.classList.add('hidden');
+  
+  if (!email || !password) { 
+    toast.error('Please enter your email and password');
+    return; 
+  }
+  
+  btn.textContent = 'Signing in...';
+  btn.disabled = true;
+  
+  try {
+    const data = await api.post('/auth/login', {email, password});
+    localStorage.setItem('gminsta_token', data.token);
+    localStorage.setItem('gminsta_user', JSON.stringify(data.user));
+    
+    toast.success(`Welcome back, ${data.user.username}!`);
+    location.href = '/pages/feed.html';
+  } catch(err) {
+    toast.error(err.message);
+    errEl.textContent = err.message;
+    errEl.classList.remove('hidden');
+    btn.textContent = 'Sign In';
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
