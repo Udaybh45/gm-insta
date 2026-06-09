@@ -183,19 +183,22 @@ function buildSidebar(activePage) {
     { icon: 'home', href: '/pages/feed.html', key: 'feed' },
     { icon: 'explore', href: '/pages/explore.html', key: 'explore' },
     { icon: 'reels', href: '/pages/reels.html', key: 'reels' },
-    { icon: 'create', href: '#', key: 'create', action: 'openCreatePost' },
+    { icon: 'messages', href: '/pages/chat.html', key: 'chat' },
     { icon: 'heart', href: '/pages/activity.html', key: 'activity' },
     { icon: 'profile', href: `/pages/profile.html?u=${user.username}`, key: 'profile' }
   ];
 
-  mobileNav.innerHTML = mobileItems.map(item => `
-    <div class="mobile-nav-item ${activePage === item.key ? 'active' : ''}" 
+  mobileNav.innerHTML = mobileItems.map(item =>
+    `<div class="mobile-nav-item ${activePage === item.key ? 'active' : ''}" 
          ${item.action ? `onclick="${item.action}()"` : `onclick="window.location='${item.href}'"` }
          id="mobile-nav-item-${item.key}" style="position:relative;">
       ${icons[item.icon]}
       <span class="nav-badge hidden" style="position:absolute;top:10px;right:16px;width:8px;height:8px;background:var(--accent);border-radius:50%;display:none;"></span>
     </div>
-  `).join('');
+  `).join('') +
+  `<a href="/GMinsta-App.apk" download class="mobile-nav-item mobile-get-app" title="Download App" id="mobile-nav-item-download">
+    <div class="mobile-get-app-icon">${icons.download}</div>
+  </a>`;
 
   // Fetch unread notifications count to update badges
   api.get('/users/activity').then(data => {
